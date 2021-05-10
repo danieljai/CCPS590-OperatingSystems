@@ -1,0 +1,400 @@
+﻿<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<!-- saved from url=(0056)http://beej.us/guide/bgipc/output/html/multipage/mq.html -->
+<HTML><HEAD><TITLE>Message Queues</TITLE>
+<META content="text/html; charset=utf-8" http-equiv=Content-Type><LINK 
+rel=stylesheet type=text/css href="MessageQueues_files/bgipc.css">
+<SCRIPT></SCRIPT>
+<!--[if lt IE 8]><link rel='stylesheet' type='text/css' href='/B1D671CF-E532-4481-99AA-19F420D90332/netdefender/hui/ndhui_ie7.css' /><![endif]--><LINK 
+rel=stylesheet type=text/css href="MessageQueues_files/ndhui.css">
+<META name=GENERATOR content="MSHTML 9.00.8112.16470"></HEAD>
+<BODY bgColor=#ffffff>
+<SCRIPT language=javascript type=text/javascript 
+src="MessageQueues_files/ndhui.js"></SCRIPT>
+
+<TABLE class=navtable border=0 cellSpacing=0 cellPadding=0 width="100%">
+  <TBODY>
+  <TR>
+    <TD align=left><A 
+      href="http://beej.us/guide/bgipc/output/html/multipage/flocking.html">&lt;&lt;&nbsp;Prev</A></TD>
+    <TD align=center><A 
+      href="http://beej.us/guide/bgipc/output/html/multipage/index.html">Beej's 
+      Guide to Unix IPC</A></TD>
+    <TD align=right><A 
+      href="http://beej.us/guide/bgipc/output/html/multipage/semaphores.html">Next&nbsp;&gt;&gt;</A></TD></TR></TBODY></TABLE>
+<DIV id=adsense>
+<SCRIPT type=text/javascript><!--
+google_ad_client = "pub-8191228291510015";
+google_ad_width = 160;
+google_ad_height = 600;
+google_ad_format = "160x600_as";
+google_ad_type = "text";
+//2007-05-05: bgnet
+google_ad_channel = "6194029036";
+google_color_border = "336699";
+google_color_bg = "FFFFFF";
+google_color_link = "0000FF";
+google_color_text = "000000";
+google_color_url = "008000";
+//-->
+</SCRIPT>
+
+<SCRIPT type=text/javascript src="MessageQueues_files/show_ads.js">
+</SCRIPT>
+</DIV><BR>
+<H2 class=sect1title>7. <A name=mq>Message Queues</A></H2>
+<HR class=mainsecthr>
+
+<P>Those people who brought us System V have seen fit to include some IPC 
+goodies that have been implemented on various platforms (including Linux, of 
+course.) This document describes the usage and functionality of the extremely 
+groovy System V Message Queues!</P>
+<P>As usual, I want to spew some overview at you before getting into the 
+nitty-gritty. A message queue works kind of like a <A 
+href="http://beej.us/guide/bgipc/output/html/multipage/fifos.html">FIFO</A>, but 
+supports some additional functionality. Generally, see, messages are taken off 
+the queue in the order they are put on. Specifically, however, there are ways to 
+pull certain messages out of the queue before they reach the front. It's like 
+cutting in line. (Incidentally, don't try to cut in line while visiting the 
+Great America amusement park in Silicon Valley, as you can be arrested for it. 
+They take cutting <I>very</I> seriously down there.)</P>
+<P>In terms of usage, a process can create a new message queue, or it can 
+connect to an existing one. In this, the latter, way two processes can exchange 
+information through the same message queue. Score.</P>
+<P>One more thing about System V IPC: when you create a message queue, it 
+doesn't go away until you destroy it. All the processes that have ever used it 
+can quit, but the queue will still exist. A good practice is to use the <B 
+class=com>ipcs</B> command to check if any of your unused message queues are 
+just floating around out there. You can destroy them with the <B 
+class=com>ipcrm</B> command, which is preferable to getting a visit from the 
+sysadmin telling you that you've grabbed every available message queue on the 
+system.</P>
+<H3 class=sect2title>7.1. <A name=mqwhere>Where's my queue?</A></H3>
+<P>Let's get something going! First of all, you want to connect to a queue, or 
+create it if it doesn't exist. The call to accomplish this is the <B><TT 
+class=func>msgget()</TT></B> system call:</P><PRE class=code>int msgget(key_t <I><TT class="var em1">key</TT></I>, int <I><TT class="var em1">msgflg</TT></I>);</PRE>
+<P><B><TT class=func>msgget()</TT></B> returns the message queue ID on success, 
+or <TT class=const>-1</TT> on failure (and it sets <I><TT 
+class=var>errno</TT></I>, of course.)</P>
+<P>The arguments are a little weird, but can be understood with a little 
+brow-beating. The first, <I><TT class=var>key</TT></I> is a system-wide unique 
+identifier describing the queue you want to connect to (or create). Every other 
+process that wants to connect to this queue will have to use the same <I><TT 
+class=var>key</TT></I>.</P>
+<P>The other argument, <I><TT class=var>msgflg</TT></I> tells <B><TT 
+class=func>msgget()</TT></B> what to do with queue in question. To create a 
+queue, this field must be set equal to <TT class=const>IPC_CREAT</TT> bit-wise 
+OR'd with the permissions for this queue. (The queue permissions are the same as 
+standard file permissions—queues take on the user-id and group-id of the program 
+that created them.)</P>
+<P>A sample call is given in the following section.</P>
+<H3 class=sect2title>7.2. <A name=mqftok>"Are you the Key Master?"</A></H3>
+<P>What about this <I><TT class=var>key</TT></I> nonsense? How do we create one? 
+Well, since the type <NOBR><TT class=type>key_t</TT></NOBR> is actually just a 
+<NOBR><TT class=type>long</TT></NOBR>, you can use any number you want. But what 
+if you hard-code the number and some other unrelated program hardcodes the same 
+number but wants another queue? The solution is to use the <B><TT 
+class=func>ftok()</TT></B> function which generates a key from two 
+arguments:</P><PRE class=code>key_t ftok(const char *<I><TT class="var em1">path</TT></I>, int <I><TT class="var em1">id</TT></I>);</PRE>
+<P>Ok, this is getting weird. Basically, <I><TT class=var>path</TT></I> just has 
+to be a file that this process can read. The other argument, <I><TT 
+class=var>id</TT></I> is usually just set to some arbitrary char, like 'A'. The 
+<B><TT class=func>ftok()</TT></B> function uses information about the named file 
+(like inode number, etc.) and the <I><TT class=var>id</TT></I> to generate a 
+probably-unique <I><TT class=var>key</TT></I> for <B><TT 
+class=func>msgget()</TT></B>. Programs that want to use the same queue must 
+generate the same <I><TT class=var>key</TT></I>, so they must pass the same 
+parameters to <B><TT class=func>ftok()</TT></B>.</P>
+<P>Finally, it's time to make the call:</P><PRE class=code>#include &lt;sys/msg.h&gt;
+
+key = ftok("/home/beej/somefile", 'b');
+msqid = msgget(key, 0666 | IPC_CREAT);
+</PRE>
+<P>In the above example, I set the permissions on the queue to <TT 
+class=tt>666</TT> (or <TT class=tt>rw-rw-rw-</TT>, if that makes more sense to 
+you). And now we have <I><TT class=var>msqid</TT></I> which will be used to send 
+and receive messages from the queue.</P>
+<H3 class=sect2title>7.3. <A name=mqsend>Sending to the queue</A></H3>
+<P>Once you've connected to the message queue using <B><TT 
+class=func>msgget()</TT></B>, you are ready to send and receive messages. First, 
+the sending:</P>
+<P>Each message is made up of two parts, which are defined in the template 
+structure <NOBR><TT class=type>struct msgbuf</TT></NOBR>, as defined in <I><TT 
+class=var>sys/msg.h</TT></I>:</P><PRE class=code>struct msgbuf {
+    long mtype;
+    char mtext[1];
+};</PRE>
+<P>The field <I><TT class=var>mtype</TT></I> is used later when retrieving 
+messages from the queue, and can be set to any positive number. <I><TT 
+class=var>mtext</TT></I> is the data this will be added to the queue.</P>
+<P>"What?! You can only put one byte arrays onto a message queue?! Worthless!!" 
+Well, not exactly. You can use any structure you want to put messages on the 
+queue, as long as the first element is a long. For instance, we could use this 
+structure to store all kinds of goodies:</P><PRE class=code>struct pirate_msgbuf {
+    long mtype;  /* must be positive */
+    struct pirate_info {
+        char name[30];
+        char ship_type;
+        int notoriety;
+        int cruelty;
+        int booty_value;
+    } info;
+};</PRE>
+<P>Ok, so how do we pass this information to a message queue? The answer is 
+simple, my friends: just use <B><TT class=func>msgsnd()</TT></B>:</P><PRE class=code>int msgsnd(int <I><TT class="var em1">msqid</TT></I>, const void *<I><TT class="var em1">msgp</TT></I>,
+           size_t <I><TT class="var em1">msgsz</TT></I>, int <I><TT class="var em1">msgflg</TT></I>);</PRE>
+<P><I><TT class=var>msqid</TT></I> is the message queue identifier returned by 
+<B><TT class=func>msgget()</TT></B>. The pointer <I><TT class=var>msgp</TT></I> 
+is a pointer to the data you want to put on the queue. <I><TT 
+class=var>msgsz</TT></I> is the size in bytes of the data to add to the queue 
+(not counting the size of the <I><TT class=var>mtype</TT></I> member). Finally, 
+<I><TT class=var>msgflg</TT></I> allows you to set some optional flag 
+parameters, which we'll ignore for now by setting it to <TT 
+class=const>0</TT>.</P>
+<P>When to get the size of the data to send, just subtract the <B><TT 
+class=func>sizeof(long)</TT></B> (the <I><TT class=var>mtype</TT></I>) from the 
+<B><TT class=func>sizeof()</TT></B> the whole message buffer structure:</P><PRE class=code>struct cheese_msgbuf {
+    long mtype;
+    char name[20];
+    int type;
+    float yumminess;
+};
+
+/* calculate the size of the data to send: */
+
+int size = sizeof(struct cheese_msgbuf) - sizeof(long);</PRE>
+<P>(Or if the payload is a simple <NOBR><TT class=type>char[]</TT></NOBR>, you 
+can use the length of the data as the message size.)</P>
+<P>And here is a code snippet that shows one of our pirate structures being 
+added to the message queue:</P><PRE class=code>#include &lt;sys/msg.h&gt;
+#include &lt;stddef.h&gt;
+
+key_t key;
+int msqid;
+struct pirate_msgbuf pmb = {2, { "L'Olonais", 'S', 80, 10, 12035 } };
+
+key = ftok("/home/beej/somefile", 'b');
+msqid = msgget(key, 0666 | IPC_CREAT);
+
+/* stick him on the queue */
+msgsnd(msqid, &amp;pmb, sizeof(struct pirate_msgbuf) - sizeof(long), 0);</PRE>
+<P>Aside from remembering to error-check the return values from all these 
+functions, this is all there is to it. Oh, yeah: note that I arbitrarily set the 
+<I><TT class=var>mtype</TT></I> field to <TT class=const>2</TT> up there. 
+That'll be important in the next section.</P>
+<H3 class=sect2title>7.4. <A name=mqrece>Receiving from the queue</A></H3>
+<P>Now that we have the dreaded pirate <A 
+href="http://beej.us/pirates/pirate_view.php?file=lolonais.jpg" 
+target=_blank>Francis L'Olonais</A> stuck in our message queue, how do we get 
+him out? As you can imagine, there is a counterpart to <B><TT 
+class=func>msgsnd()</TT></B>: it is <B><TT class=func>msgrcv()</TT></B>. How 
+imaginative.</P>
+<P>A call to <B><TT class=func>msgrcv()</TT></B> that would do it looks 
+something like this:</P><PRE class=code>#include &lt;sys/msg.h&gt;
+#include &lt;stddef.h&gt;
+
+key_t key;
+int msqid;
+struct pirate_msgbuf pmb; /* where L'Olonais is to be kept */
+
+key = ftok("/home/beej/somefile", 'b');
+msqid = msgget(key, 0666 | IPC_CREAT);
+
+/* get him off the queue! */
+msgrcv(msqid, &amp;pmb, sizeof(struct pirate_msgbuf) - sizeof(long), 2, 0);</PRE>
+<P>There is something new to note in the <B><TT class=func>msgrcv()</TT></B> 
+call: the <TT class=const>2</TT>! What does it mean? Here's the synopsis of the 
+call:</P><PRE class=code>int msgrcv(int <I><TT class="var em1">msqid</TT></I>, void *<I><TT class="var em1">msgp</TT></I>, size_t <I><TT class="var em1">msgsz</TT></I>,
+           long <I><TT class="var em1">msgtyp</TT></I>, int <I><TT class="var em1">msgflg</TT></I>);</PRE>
+<P>The <TT class=const>2</TT> we specified in the call is the requested <I><TT 
+class=var>msgtyp</TT></I>. Recall that we set the <I><TT 
+class=var>mtype</TT></I> arbitrarily to <TT class=const>2</TT> in the <B><TT 
+class=func>msgsnd()</TT></B> section of this document, so that will be the one 
+that is retrieved from the queue.</P>
+<P>Actually, the behavior of <B><TT class=func>msgrcv()</TT></B> can be modified 
+drastically by choosing a <I><TT class=var>msgtyp</TT></I> that is positive, 
+negative, or zero:</P>
+<CENTER>
+<TABLE class=joetable border=0 cellSpacing=0 cellPadding=10>
+  <TBODY>
+  <TR>
+    <TD vAlign=top width="20%" align=left><B><U><I><TT 
+      class=var>msgtyp</TT></I></U></B></TD>
+    <TD vAlign=top width="80%" align=left><B><U>Effect on <B><TT 
+      class=func>msgrcv()</TT></B></U></B></TD></TR>
+  <TR>
+    <TD vAlign=top align=left>Zero</TD>
+    <TD vAlign=top align=left>Retrieve the next message on the queue, 
+      regardless of its <I><TT class=var>mtype</TT></I>.</TD></TR>
+  <TR>
+    <TD vAlign=top align=left>Positive</TD>
+    <TD vAlign=top align=left>Get the next message with an <I><TT 
+      class=var>mtype</TT></I> <I>equal to</I> the specified <I><TT 
+      class=var>msgtyp</TT></I>.</TD></TR>
+  <TR>
+    <TD vAlign=top align=left>Negative</TD>
+    <TD vAlign=top align=left>Retrieve the first message on the queue whose 
+      <I><TT class=var>mtype</TT></I> field is less than or equal to the 
+      absolute value of the <I><TT class=var>msgtyp</TT></I> 
+  argument.</TD></TR></TBODY></TABLE></CENTER>
+<P>So, what will often be the case is that you'll simply want the next message 
+on the queue, no matter what <I><TT class=var>mtype</TT></I> it is. As such, 
+you'd set the <I><TT class=var>msgtyp</TT></I> parameter to <TT 
+class=const>0</TT>.</P>
+<H3 class=sect2title>7.5. <A name=mqdest>Destroying a message queue</A></H3>
+<P>There comes a time when you have to destroy a message queue. Like I said 
+before, they will stick around until you explicitly remove them; it is important 
+that you do this so you don't waste system resources. Ok, so you've been using 
+this message queue all day, and it's getting old. You want to obliterate it. 
+There are two ways:</P>
+<OL>
+  <LI>Use the Unix command <B class=com>ipcs</B> to get a list of defined 
+  message queues, then use the command <B class=com>ipcrm</B> to delete the 
+  queue. 
+  <LI>Write a program to do it for you. </LI></OL>
+<P>Often, the latter choice is the most appropriate, since you might want your 
+program to clean up the queue at some time or another. To do this requires the 
+introduction of another function: <B><TT class=func>msgctl()</TT></B>.</P>
+<P>The synopsis of <B><TT class=func>msgctl()</TT></B> is:</P><PRE class=code>int msgctl(int <I><TT class="var em1">msqid</TT></I>, int <I><TT class="var em1">cmd</TT></I>,
+           struct msqid_ds *<I><TT class="var em1">buf</TT></I>);</PRE>
+<P>Of course, <I><TT class=var>msqid</TT></I> is the queue identifier obtained 
+from <B><TT class=func>msgget()</TT></B>. The important argument is <I><TT 
+class=var>cmd</TT></I> which tells <B><TT class=func>msgctl()</TT></B> how to 
+behave. It can be a variety of things, but we're only going to talk about <TT 
+class=const>IPC_RMID</TT>, which is used to remove the message queue. The <I><TT 
+class=var>buf</TT></I> argument can be set to <TT class=const>NULL</TT> for the 
+purposes of <TT class=const>IPC_RMID</TT>.</P>
+<P>Say that we have the queue we created above to hold the pirates. You can 
+destroy that queue by issuing the following call:</P><PRE class=code>#include &lt;sys/msg.h&gt;
+.
+.
+msgctl(msqid, IPC_RMID, NULL);</PRE>
+<P>And the message queue is no more.</P>
+<H3 class=sect2title>7.6. <A name=mqsamp>Sample programs, anyone?</A></H3>
+<P>For the sake of completeness, I'll include a brace of programs that will 
+communicate using message queues. The first, <I><TT class=var>kirk.c</TT></I> 
+adds messages to the message queue, and <I><TT class=var>spock.c</TT></I> 
+retrieves them.</P>
+<P>Here is the source for <A href="http://beej.us/guide/bgipc/examples/kirk.c" 
+target=_blank>kirk.c</A>:</P><PRE class=code>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;string.h&gt;
+#include &lt;sys/types.h&gt;
+#include &lt;sys/ipc.h&gt;
+#include &lt;sys/msg.h&gt;
+
+struct my_msgbuf {
+    long mtype;
+    char mtext[200];
+};
+
+int main(void)
+{
+    struct my_msgbuf buf;
+    int msqid;
+    key_t key;
+
+    if ((key = ftok("kirk.c", 'B')) == -1) {
+        perror("ftok");
+        exit(1);
+    }
+
+    if ((msqid = msgget(key, 0644 | IPC_CREAT)) == -1) {
+        perror("msgget");
+        exit(1);
+    }
+    
+    printf("Enter lines of text, ^D to quit:\n");
+
+    buf.mtype = 1; /* we don't really care in this case */
+
+    while(fgets(buf.mtext, sizeof buf.mtext, stdin) != NULL) {
+        int len = strlen(buf.mtext);
+
+        /* ditch newline at end, if it exists */
+        if (buf.mtext[len-1] == '\n') buf.mtext[len-1] = '\0';
+
+        if (msgsnd(msqid, &amp;buf, len+1, 0) == -1) /* +1 for '\0' */
+            perror("msgsnd");
+    }
+
+    if (msgctl(msqid, IPC_RMID, NULL) == -1) {
+        perror("msgctl");
+        exit(1);
+    }
+
+    return 0;
+}</PRE>
+<P>The way <B class=com>kirk</B> works is that it allows you to enter lines of 
+text. Each line is bundled into a message and added to the message queue. The 
+message queue is then read by <B class=com>spock</B>.</P>
+<P>Here is the source for <A href="http://beej.us/guide/bgipc/examples/spock.c" 
+target=_blank>spock.c</A>:</P><PRE class=code>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;sys/types.h&gt;
+#include &lt;sys/ipc.h&gt;
+#include &lt;sys/msg.h&gt;
+
+struct my_msgbuf {
+    long mtype;
+    char mtext[200];
+};
+
+int main(void)
+{
+    struct my_msgbuf buf;
+    int msqid;
+    key_t key;
+
+    if ((key = ftok("kirk.c", 'B')) == -1) {  /* same key as kirk.c */
+        perror("ftok");
+        exit(1);
+    }
+
+    if ((msqid = msgget(key, 0644)) == -1) { /* connect to the queue */
+        perror("msgget");
+        exit(1);
+    }
+    
+    printf("spock: ready to receive messages, captain.\n");
+
+    for(;;) { /* Spock never quits! */
+        if (msgrcv(msqid, &amp;buf, sizeof(buf.mtext), 0, 0) == -1) {
+            perror("msgrcv");
+            exit(1);
+        }
+        printf("spock: \"%s\"\n", buf.mtext);
+    }
+
+    return 0;
+}</PRE>
+<P>Notice that <B class=com>spock</B>, in the call to <B><TT 
+class=func>msgget()</TT></B>, doesn't include the <TT class=const>IPC_CREAT</TT> 
+option. We've left it up to <B class=com>kirk</B> to create the message queue, 
+and <B class=com>spock</B> will return an error if he hasn't done so.</P>
+<P>Notice what happens when you're running both in separate windows and you kill 
+one or the other. Also try running two copies of <B class=com>kirk</B> or two 
+copies of <B class=com>spock</B> to get an idea of what happens when you have 
+two readers or two writers. Another interesting demonstration is to run <B 
+class=com>kirk</B>, enter a bunch of messages, then run <B class=com>spock</B> 
+and see it retrieve all the messages in one swoop. Just messing around with 
+these toy programs will help you gain an understanding of what is really going 
+on.</P>
+<H3 class=sect2title>7.7. <A name=mqsum>Summary</A></H3>
+<P>There is more to message queues than this short tutorial can present. Be sure 
+to look in the man pages to see what else you can do, especially in the area of 
+<B><TT class=func>msgctl()</TT></B>. Also, there are more options you can pass 
+to other functions to control how <B><TT class=func>msgsnd()</TT></B> and <B><TT 
+class=func>msgrcv()</TT></B> handle if the queue is full or empty, 
+respectively.</P>
+<TABLE class=navtable border=0 cellSpacing=0 cellPadding=0 width="100%">
+  <TBODY>
+  <TR>
+    <TD align=left><A 
+      href="http://beej.us/guide/bgipc/output/html/multipage/flocking.html">&lt;&lt;&nbsp;Prev</A></TD>
+    <TD align=center><A 
+      href="http://beej.us/guide/bgipc/output/html/multipage/index.html">Beej's 
+      Guide to Unix IPC</A></TD>
+    <TD align=right><A 
+      href="http://beej.us/guide/bgipc/output/html/multipage/semaphores.html">Next&nbsp;&gt;&gt;</A></TD></TR></TBODY></TABLE></BODY></HTML>

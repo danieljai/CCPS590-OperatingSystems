@@ -1,0 +1,41 @@
+CPS590 Lab07
+------------
+
+Submit answers to questions 3, 4, 5, 7, 8 as well as your code for 
+kirkKey.c and spockKey.c
+
+----------------------------------------------------------------------
+Message passing in Linux
+----------------------------------------------------------------------
+
+
+
+3. 	When kirk ended, why did spock also end?
+	- When kirk ends, any information contained within the object is destroyed regardless of whether
+	any other process are using them. 
+
+4. 	Try starting spock first. What "output" does it give? Why?
+	- msgget: no such file or directory
+	- msgget attempts to connect through key but the message queue was not initialized by kirk yet.
+
+5. 	Start kirk in one window, then spock in another. Make kirk give some orders.
+	Now try to end spock with ctrl-d. It won't end. Why?
+	Make them both end by sending kirk ctrl-d.
+	
+	- Ending spock won't work because it has no msgctl IPC_RMID command while kirk does, and 
+	Spock never quits!
+
+7. 	Any message queues you make will continue to exist until they are explicitly
+	deleted. How does kirk.c and/or spock.c delete the message queue?
+
+	- By sending a msgtrl with IPC_RMID to remove the message queue identifier along with its
+	associated message queue and data structure.
+
+8. 	Make several shell windows. Try running a kirkKey in one window, and in each
+    of 3 different windows, run a spockKey.  What can this tell you about the 
+    process scheduling? 
+
+	- It has its internal queue of receivers. As kirk sends out messages, spock receivers will
+	receive the messages one by one in order of the queue.
+
+

@@ -1,0 +1,84 @@
+CPS590 Lab09
+------------
+
+Submit your code for r.c and w.c
+
+--------------------------------------------------------------------------
+Shared Memory
+--------------------------------------------------------------------------
+
+Look at writeP.c and readP.c and see how they share memory.
+Try running them; see RUNNING below to see how I ran them.
+
+copy writeP.c and readP.c to w.c and r.c
+modify w.c and r.c so that the following interactions happen:
+
+w: 	fills array with 0-9 then sets flag to alert reader it may read
+    now (sets flag by putting -1 in 0th slot)
+	
+r: 	reads shmem, prints, resets flag (puts 0 in 0th slot), and 
+    then signals w it may reload with new values (use signal 10)
+	
+w: 	fills array with 10-19 then resets flag (-1 in 0th slot) to 
+    alert reader it may read again
+	
+r: 	reads shmem, prints, then uses the system function to perform 
+	"ipcs -m" to display the shmem segments allocated,
+	then signals w to detach shmem and die. 
+	
+w: 	detaches shmem 
+
+The r.c program may use busy-waiting.
+The w.c program may not use busy-waiting (use pause or wait).
+
+Assume optimization cannot re-order loads and/or stores.
+
+Note: in order for r to signal w, it uses the kill system call.
+Since kill needs to know the processID to send the signal to, the
+processID is given to r as a command line argument.
+
+--------------------------------------------------------------------------
+
+RUNNING:
+
+> ./writeP &
+[1] 28857
+> ./readP 28857
+-1
+1
+2
+3
+4
+5
+6
+7
+8
+9
+[1]+  Done                    ./writeP
+> 
+
+------------------------------------------------------------------------------------
+
+LISTING AND REMOVING SHARED MEMORY:
+
+Shared memory segments can be viewed/deleted from the shell using the commands:
+	ipcs
+	ipcrm
+
+When I DO have a shared memory segment, listing, and removing it goes something like this:
+
+>  ipcs -m
+------ Shared Memory Segments --------
+key        shmid      owner      perms      bytes      nattch     status      
+0x0000004b 1594261505 aufkes     666        128        0                
+> ipcrm -m 1594261505
+
+> ipcs -m
+------ Shared Memory Segments --------
+key        shmid      owner      perms      bytes      nattch     status      
+
+>
+
+The final ipcs showed there are now no shared memory segments.
+Note: if you run ipcs -m in the shell AFTER running writeP and readP, 
+there will be no shared memory listed, because writeP deleted it.

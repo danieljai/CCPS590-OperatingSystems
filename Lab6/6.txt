@@ -1,0 +1,41 @@
+CPS590 Lab06
+------------
+
+Submit answers to questions 2, 3, 5, as well as your code for threadSem.c
+
+----------------------------------------------------------------------
+Unnamed Semaphores
+----------------------------------------------------------------------
+
+1. 	Compile thread2.c (remember the -lpthread flag).
+	Run it numerous times, and notice the output usually differs.
+
+2. 	Explain why the variable myglobal is usually not 40.
+- Variables J and myglobal incremnts are not in mutual exclusion, result to data race.
+	
+3. 	Explain in what special case myglobal would be 40.
+- Given the current code, by chance if the "for" block inside the two functions run to its entirety, in all 40 times.
+   
+4. 	Learn about POSIX semaphores using the man pages
+		man sem_overview
+		man sem_init
+		etc.
+	You could also use any web-based man pages if you prefer: 
+	e.g., http://linux.die.net/man/7/sem_overview
+
+
+5. Copy thread2.c to threadSem.c, and modify threadSem.c to use 
+   an UNNAMED semaphore to synchronize the update of myglobal.
+   You must use the semaphore efficiently, i.e., keep the critical 
+   sections as small as possible.
+   You must use functions:
+		sem_wait
+		sem_post
+		sem_init
+		sem_destroy
+   Run threadSem numerous times to verify myglobal is always 40.
+   
+   Given your various runs, what can you say about the interleaving
+   of parent and child threads during run-time?
+- parent and child process appears to interleave in blocks - i.e. the process runs in consecutive sessions. However mutex is achieved.
+ 
